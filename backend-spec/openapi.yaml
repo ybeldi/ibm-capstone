@@ -1,0 +1,433 @@
+openapi: 3.0.3
+info:
+  title: Book Worm Bookstore API
+  version: 1.0.0
+  description: |
+    Production-grade RESTful API for Book Worm E-Commerce Bookstore Platform.
+    Generated following AI Specialist Capstone specifications for Member, Catalog, Order, Shipping, and Payment domains.
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local Development Server
+  - url: https://api.bookworm.example.com/v1
+    description: Production Cluster (e.g. AWS ROSA / IBM ROKS)
+
+paths:
+  /auth/login:
+    post:
+      summary: Authenticate member
+      tags: [Auth & Member]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@bookworm.com
+                password:
+                  type: string
+                  format: password
+                  example: "Secr3t!Pass"
+      responses:
+        '200':
+          description: Successful login
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  member:
+                    $ref: '#/components/schemas/Member'
+        '401':
+          description: Invalid credentials
+
+  /books:
+    get:
+      summary: List and search books with filters
+      tags: [Catalog]
+      parameters:
+        - name: query
+          in: query
+          schema:
+            type: string
+          description: Search term across title, author, and description
+        - name: category
+          in: query
+          schema:
+            type: string
+          description: Filter by category slug (e.g. self-help, fiction)
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [All, Paperback, Hardcover, eBook, Audiobook]
+        - name: language
+          in: query
+          schema:
+            type: string
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [relevance, price_asc, price_desc, rating, newest]
+      responses:
+        '200':
+          description: Paginated book list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Book'
+                  total:
+                    type: integer
+
+  /books/{id}:
+    get:
+      summary: Retrieve detailed book information
+      tags: [Catalog]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Book details including author bio, reviews, and related reads
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookDetail'
+        '404':
+          description: Book not found
+
+  /books/{id}/reviews:
+    post:
+      summary: Submit a reader review
+      tags: [Reviews]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rating, comment]
+              properties:
+                rating:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                comment:
+                  type: string
+                  maxLength: 500
+      responses:
+        '201':
+          description: Review accepted and published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Review'
+
+  /orders:
+    get:
+      summary: List user order history with Buy It Again status
+      tags: [Orders]
+      responses:
+        '200':
+          description: List of user orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Order'
+    post:
+      summary: Place a new order
+      tags: [Orders]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+      responses:
+        '201':
+          description: Order created with 48hr cancellation window
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+
+  /orders/{id}/cancel:
+    post:
+      summary: Cancel an order within 48 hours of purchase
+      tags: [Orders]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Order successfully cancelled and refund initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          description: Cancellation window expired (exceeded 48 hours)
+
+  /orders/{id}/buy-again:
+    post:
+      summary: 1-Click re-add all order items to active cart
+      tags: [Orders]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Items added to cart
+
+  /coupons/validate:
+    post:
+      summary: Validate promo coupon and calculate discount
+      tags: [Orders]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, subtotal]
+              properties:
+                code:
+                  type: string
+                  example: "WELCOME10"
+                subtotal:
+                  type: number
+      responses:
+        '200':
+          description: Coupon validation result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                  discount:
+                    type: number
+                  message:
+                    type: string
+
+components:
+  schemas:
+    Member:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        giftPoints:
+          type: integer
+          example: 500
+
+    Book:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          example: "The Art of Focus"
+        author:
+          type: string
+          example: "Arjun Patel"
+        publisher:
+          type: string
+          example: "ABC Publishers"
+        synopsis:
+          type: string
+        price:
+          type: number
+          example: 399
+        format:
+          type: string
+          example: "Paperback"
+        category:
+          type: string
+          example: "Self-help"
+        tags:
+          type: array
+          items:
+            type: string
+        rating:
+          type: number
+          example: 4.8
+        copiesSold:
+          type: integer
+          example: 145
+        tentativeDelivery:
+          type: string
+          example: "Mon, 21 Jul"
+        frontCover:
+          type: string
+        backCover:
+          type: string
+
+    BookDetail:
+      allOf:
+        - $ref: '#/components/schemas/Book'
+        - type: object
+          properties:
+            authorBio:
+              type: string
+            reviews:
+              type: array
+              items:
+                $ref: '#/components/schemas/Review'
+            relatedReads:
+              type: array
+              items:
+                $ref: '#/components/schemas/Book'
+
+    Review:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        reviewerName:
+          type: string
+        rating:
+          type: integer
+        comment:
+          type: string
+        date:
+          type: string
+          format: date
+
+    CreateOrderRequest:
+      type: object
+      required: [items, address, paymentMethod]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [bookId, quantity, unitPrice]
+            properties:
+              bookId:
+                type: string
+              quantity:
+                type: integer
+              unitPrice:
+                type: number
+        address:
+          type: object
+          required: [firstName, lastName, addressLine1, city, state, postalCode, phone]
+          properties:
+            firstName:
+              type: string
+            lastName:
+              type: string
+            addressLine1:
+              type: string
+            addressLine2:
+              type: string
+            city:
+              type: string
+            state:
+              type: string
+            postalCode:
+              type: string
+            country:
+              type: string
+            phone:
+              type: string
+        paymentMethod:
+          type: string
+          enum: [Credit Card, Debit Card, UPI, Wallet, Gift Points]
+        redeemedGiftPoints:
+          type: integer
+        couponCode:
+          type: string
+
+    Order:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        orderNumber:
+          type: string
+          example: "BW-98241"
+        createdAt:
+          type: string
+          format: date-time
+        cancellationDeadline:
+          type: string
+          format: date-time
+          description: Exactly 48 hours after creation
+        isCancellable:
+          type: boolean
+        status:
+          type: string
+          enum: [confirmed, processing, shipped, delivered, cancelled]
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Book'
+        subtotal:
+          type: number
+        tax:
+          type: number
+        deliveryCharges:
+          type: number
+        discount:
+          type: number
+        totalAmount:
+          type: number
+        deliveryAddress:
+          type: string
+        paymentMethod:
+          type: string
